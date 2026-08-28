@@ -1,0 +1,171 @@
+;; Walk / node-type fixtures over the vendored CST. Each test_* is 1 pass / 0 fail.
+;; Fresh instantiateKotoba per export so fuel stays at 512.
+
+(defn test-host-cannot-parse [] :i64
+  (if (= (host-can-parse?) 0)
+    1
+    0))
+
+(defn test-fixture-source [] :i64
+  (if (string=? (tree-source (fixture-tree)) (fixture-source))
+    1
+    0))
+
+(defn test-root-type [] :i64
+  (if (string=? (node-type (tree-root (fixture-tree))) "source_file")
+    1
+    0))
+
+(defn test-root-named [] :i64
+  (if (node-named? (tree-root (fixture-tree)))
+    1
+    0))
+
+(defn test-root-span [] :i64
+  (let [n (tree-root (fixture-tree))]
+    (if (and (= (node-start-byte n) 0) (= (node-end-byte n) 5))
+      1
+      0)))
+
+(defn test-root-child-count [] :i64
+  (if (= (node-child-count (tree-root (fixture-tree))) 1)
+    1
+    0))
+
+(defn test-assignment-children [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)]
+    (if (and (string=? (node-type assign) "assignment")
+             (= (node-child-count assign) 3))
+      1
+      0)))
+
+(defn test-named-child-count [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)]
+    (if (= (node-named-child-count tree assign) 2)
+      1
+      0)))
+
+(defn test-field-left [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        left (node-child-by-field-name tree assign "left")]
+    (if (and (string=? (node-type left) "identifier")
+             (= (node-end-byte left) 1))
+      1
+      0)))
+
+(defn test-field-right [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        right (node-child-by-field-name tree assign "right")]
+    (if (and (string=? (node-type right) "number")
+             (= (node-start-byte right) 4))
+      1
+      0)))
+
+(defn test-anonymous-eq [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        eq (node-child tree assign 1)]
+    (if (and (string=? (node-type eq) "=")
+             (not (node-named? eq)))
+      1
+      0)))
+
+(defn test-named-child-index [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        first (node-named-child tree assign 0)
+        second (node-named-child tree assign 1)]
+    (if (and (string=? (node-type first) "identifier")
+             (string=? (node-type second) "number"))
+      1
+      0)))
+
+(defn test-parent [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        left (node-child tree assign 0)]
+    (if (node-eq? (node-parent tree left) assign)
+      1
+      0)))
+
+(defn test-siblings [] :i64
+  (let [tree (fixture-tree)
+        assign (node-child tree (tree-root tree) 0)
+        left (node-child tree assign 0)
+        eq (node-next-sibling tree left)
+        num (node-next-sibling tree eq)
+        back (node-prev-sibling tree num)]
+    (if (and (string=? (node-type eq) "=")
+             (and (string=? (node-type num) "number")
+                  (node-eq? back eq)))
+      1
+      0)))
+
+(defn test-out-of-range-null [] :i64
+  (let [tree (fixture-tree)
+        root (tree-root tree)]
+    (if (and (node-is-null? (node-child tree root 9))
+             (node-is-null? (node-parent tree root)))
+      1
+      0)))
+
+(defn test-sexp [] :i64
+  (let [tree (fixture-tree)]
+    (if (string=? (node-sexp tree (tree-root tree))
+                 "(source_file (assignment (identifier) \"=\" (number)))")
+      1
+      0)))
+
+(defn test-cursor-walk [] :i64
+  (let [tree (fixture-tree)
+        c0 (cursor-new 0)
+        c1 (cursor-goto-first-child tree c0)
+        c2 (cursor-goto-first-child tree c1)
+        c3 (cursor-goto-next-sibling tree c2)
+        c4 (cursor-goto-next-sibling tree c3)
+        c5 (cursor-goto-parent tree c4)]
+    (if (and (and (cursor-ok? c1) (string=? (node-type (cursor-current-node tree c1)) "assignment"))
+             (and (and (string=? (node-type (cursor-current-node tree c2)) "identifier")
+                       (string=? (cursor-current-field-name tree c2) "left"))
+                  (and (and (string=? (node-type (cursor-current-node tree c3)) "=")
+                            (string=? (node-type (cursor-current-node tree c4)) "number"))
+                       (and (cursor-ok? c5)
+                            (string=? (node-type (cursor-current-node tree c5)) "assignment")))))
+      1
+      0)))
+
+(defn test-cursor-root-parent-fails [] :i64
+  (let [tree (fixture-tree)
+        c (cursor-goto-parent tree (cursor-new 0))]
+    (if (not (cursor-ok? c))
+      1
+      0)))
+
+(defn test-node-types-count [] :i64
+  (if (= (document-count (node-types)) 5)
+    1
+    0))
+
+(defn test-node-type-named-catalog [] :i64
+  (let [types (node-types)]
+    (if (and (node-type-named? types "assignment")
+             (not (node-type-named? types "=")))
+      1
+      0)))
+
+(defn test-node-type-fields [] :i64
+  (let [types (node-types)]
+    (if (and (node-type-has-field? types "assignment" "left")
+             (and (node-type-has-field? types "assignment" "right")
+                  (not (node-type-has-field? types "identifier" "left"))))
+      1
+      0)))
+
+(defn test-node-type-missing [] :i64
+  (if (node-is-null? (node-type-entry (node-types) "missing"))
+    1
+    0))

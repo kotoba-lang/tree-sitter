@@ -1,0 +1,320 @@
+(ns tree-sitter.kotoba
+  (:export [host-can-parse?
+            node-types fixture-tree fixture-source
+            tree-root tree-source tree-node
+            node-type node-named? node-is-null? node-id node-field-name
+            node-start-byte node-end-byte
+            node-start-row node-start-column node-end-row node-end-column
+            node-child-count node-child node-named-child-count node-named-child
+            node-child-by-field-name node-parent node-next-sibling node-prev-sibling
+            node-eq? node-sexp
+            cursor-new cursor-id cursor-ok? cursor-current-node cursor-current-field-name
+            cursor-goto-first-child cursor-goto-next-sibling cursor-goto-parent
+            node-type-entry node-type-named? node-type-has-field?]))
+
+;; Kotoba cannot FFI libtree-sitter. This unit is the host-facing node / tree /
+;; cursor shape plus a walk over a vendored CST fixture. It is not a parser.
+;; A host that can call C may inject a tree document with the same keys.
+
+(defn box-i64 [n :i64] :document
+  (document-edn-read (string-from-i64 n)))
+
+(defn box-str [s :string] :document
+  (document-edn-read (string-join "" "\"" s "\"")))
+
+(defn doc-get [m :document k :keyword] :document
+  (option-or (document-get m k) (document nil)))
+
+(defn is-kind? [d :document k :string] :bool
+  (string=? (keyword-name (document-kind d)) k))
+
+(defn doc-str [d :document] :string
+  (let [p (document-edn-print d)
+        n (string-length p)]
+    (cond
+      (is-kind? d "string") (if (< n 2) "" (string-substring p 1 (- n 1)))
+      (is-kind? d "keyword") (string-substring p 1 n)
+      :else "")))
+
+(defn parse-i64 [s :string i :i64 acc :i64 sign :i64] :i64
+  (if (>= i (string-length s))
+    (* acc sign)
+    (let [c (string-code-point-at s i)]
+      (if (and (>= c 48) (<= c 57))
+        (parse-i64 s (+ i 1) (+ (* acc 10) (- c 48)) sign)
+        (* acc sign)))))
+
+(defn doc-i64 [d :document] :i64
+  (if (is-kind? d "i64")
+    (let [p (document-edn-print d)]
+      (if (and (> (string-length p) 0) (= (string-code-point-at p 0) 45))
+        (parse-i64 p 1 0 -1)
+        (parse-i64 p 0 0 1)))
+    0))
+
+(defn doc-true? [d :document] :bool
+  (or (string=? (document-edn-print d) "true")
+      (= (doc-i64 d) 1)))
+
+(defn null-node [] :document
+  (document-assoc (document {}) :null (box-i64 1)))
+
+(defn node-is-null? [n :document] :bool
+  (= (doc-i64 (doc-get n :null)) 1))
+
+(defn host-can-parse? [] :i64
+  0)
+
+(defn node-types-edn [] :string
+  "[{:type \"source_file\" :named true :fields {} :children {:multiple true :required true :types [{:type \"assignment\" :named true}]}} {:type \"assignment\" :named true :fields {:left {:multiple false :required true :types [{:type \"identifier\" :named true}]} :right {:multiple false :required true :types [{:type \"number\" :named true}]}} :children {:multiple true :required false :types [{:type \"=\" :named false}]}} {:type \"identifier\" :named true} {:type \"number\" :named true} {:type \"=\" :named false}]")
+
+(defn fixture-tree-edn [] :string
+  "{:source \"x = 1\" :root-id 0 :nodes [{:id 0 :parent -1 :type \"source_file\" :named 1 :start-byte 0 :end-byte 5 :start-row 0 :start-column 0 :end-row 0 :end-column 5 :field \"\" :children [1]} {:id 1 :parent 0 :type \"assignment\" :named 1 :start-byte 0 :end-byte 5 :start-row 0 :start-column 0 :end-row 0 :end-column 5 :field \"\" :children [2 3 4]} {:id 2 :parent 1 :type \"identifier\" :named 1 :start-byte 0 :end-byte 1 :start-row 0 :start-column 0 :end-row 0 :end-column 1 :field \"left\" :children []} {:id 3 :parent 1 :type \"=\" :named 0 :start-byte 2 :end-byte 3 :start-row 0 :start-column 2 :end-row 0 :end-column 3 :field \"\" :children []} {:id 4 :parent 1 :type \"number\" :named 1 :start-byte 4 :end-byte 5 :start-row 0 :start-column 4 :end-row 0 :end-column 5 :field \"right\" :children []}]}")
+
+(defn node-types [] :document
+  (document-edn-read (node-types-edn)))
+
+(defn fixture-tree [] :document
+  (document-edn-read (fixture-tree-edn)))
+
+(defn fixture-source [] :string
+  "x = 1")
+
+(defn tree-source [tree :document] :string
+  (doc-str (doc-get tree :source)))
+
+(defn tree-node [tree :document id :i64] :document
+  (if (< id 0)
+    (null-node)
+    (let [nodes (option-or (document-get tree :nodes) (document []))
+          n (document-count nodes)]
+      (if (>= id n)
+        (null-node)
+        (option-or (document-vector-at nodes id) (null-node))))))
+
+(defn tree-root [tree :document] :document
+  (tree-node tree (doc-i64 (doc-get tree :root-id))))
+
+(defn node-type [n :document] :string
+  (doc-str (doc-get n :type)))
+
+(defn node-named? [n :document] :bool
+  (doc-true? (doc-get n :named)))
+
+(defn node-id [n :document] :i64
+  (doc-i64 (doc-get n :id)))
+
+(defn node-field-name [n :document] :string
+  (doc-str (doc-get n :field)))
+
+(defn node-start-byte [n :document] :i64
+  (doc-i64 (doc-get n :start-byte)))
+
+(defn node-end-byte [n :document] :i64
+  (doc-i64 (doc-get n :end-byte)))
+
+(defn node-start-row [n :document] :i64
+  (doc-i64 (doc-get n :start-row)))
+
+(defn node-start-column [n :document] :i64
+  (doc-i64 (doc-get n :start-column)))
+
+(defn node-end-row [n :document] :i64
+  (doc-i64 (doc-get n :end-row)))
+
+(defn node-end-column [n :document] :i64
+  (doc-i64 (doc-get n :end-column)))
+
+(defn node-children [n :document] :document
+  (option-or (document-get n :children) (document [])))
+
+(defn node-child-count [n :document] :i64
+  (document-count (node-children n)))
+
+(defn child-id-at [n :document i :i64] :i64
+  (let [kids (node-children n)]
+    (if (or (< i 0) (>= i (document-count kids)))
+      -1
+      (doc-i64 (option-or (document-vector-at kids i) (document -1))))))
+
+(defn node-child [tree :document n :document i :i64] :document
+  (tree-node tree (child-id-at n i)))
+
+(defn count-named [tree :document kids :document i :i64 acc :i64] :i64
+  (if (>= i (document-count kids))
+    acc
+    (let [id (doc-i64 (option-or (document-vector-at kids i) (document -1)))
+          child (tree-node tree id)
+          next (if (and (not (node-is-null? child)) (node-named? child))
+                 (+ acc 1)
+                 acc)]
+      (count-named tree kids (+ i 1) next))))
+
+(defn node-named-child-count [tree :document n :document] :i64
+  (count-named tree (node-children n) 0 0))
+
+(defn scan-st [want :i64 seen :i64] :document
+  (document-assoc (document-assoc (document {}) :want (box-i64 want)) :seen (box-i64 seen)))
+
+(defn scan-named [tree :document kids :document i :i64 st :document] :i64
+  (if (>= i (document-count kids))
+    -1
+    (let [want (doc-i64 (doc-get st :want))
+          seen (doc-i64 (doc-get st :seen))
+          id (doc-i64 (option-or (document-vector-at kids i) (document -1)))
+          child (tree-node tree id)]
+      (if (and (not (node-is-null? child)) (node-named? child))
+        (if (= seen want)
+          id
+          (scan-named tree kids (+ i 1) (scan-st want (+ seen 1))))
+        (scan-named tree kids (+ i 1) st)))))
+
+(defn node-named-child [tree :document n :document i :i64] :document
+  (tree-node tree (scan-named tree (node-children n) 0 (scan-st i 0))))
+
+(defn scan-field [tree :document kids :document field :string i :i64] :i64
+  (if (>= i (document-count kids))
+    -1
+    (let [id (doc-i64 (option-or (document-vector-at kids i) (document -1)))
+          child (tree-node tree id)]
+      (if (string=? (node-field-name child) field)
+        id
+        (scan-field tree kids field (+ i 1))))))
+
+(defn node-child-by-field-name [tree :document n :document field :string] :document
+  (tree-node tree (scan-field tree (node-children n) field 0)))
+
+(defn node-parent [tree :document n :document] :document
+  (tree-node tree (doc-i64 (doc-get n :parent))))
+
+(defn find-index [kids :document id :i64 i :i64] :i64
+  (if (>= i (document-count kids))
+    -1
+    (if (= (doc-i64 (option-or (document-vector-at kids i) (document -1))) id)
+      i
+      (find-index kids id (+ i 1)))))
+
+(defn node-next-sibling [tree :document n :document] :document
+  (let [p (node-parent tree n)]
+    (if (node-is-null? p)
+      (null-node)
+      (let [kids (node-children p)
+            idx (find-index kids (node-id n) 0)]
+        (if (< idx 0)
+          (null-node)
+          (node-child tree p (+ idx 1)))))))
+
+(defn node-prev-sibling [tree :document n :document] :document
+  (let [p (node-parent tree n)]
+    (if (node-is-null? p)
+      (null-node)
+      (let [kids (node-children p)
+            idx (find-index kids (node-id n) 0)]
+        (if (<= idx 0)
+          (null-node)
+          (node-child tree p (- idx 1)))))))
+
+(defn node-eq? [a :document b :document] :bool
+  (and (not (node-is-null? a))
+       (and (not (node-is-null? b))
+            (= (node-id a) (node-id b)))))
+
+(defn sexp-piece [tree :document n :document acc :string] :string
+  (if (node-is-null? n)
+    (string-concat acc "()")
+    (let [typ (node-type n)
+          kids (node-children n)]
+      (if (node-named? n)
+        (if (= (document-count kids) 0)
+          (string-join "" acc "(" typ ")")
+          (string-join "" acc "(" typ " " (sexp-kids tree kids 0 "") ")"))
+        (string-join "" acc "\"" typ "\"")))))
+
+(defn sexp-kids [tree :document kids :document i :i64 acc :string] :string
+  (if (>= i (document-count kids))
+    acc
+    (let [id (doc-i64 (option-or (document-vector-at kids i) (document -1)))
+          sep (if (= i 0) "" " ")
+          piece (sexp-piece tree (tree-node tree id) "")]
+      (sexp-kids tree kids (+ i 1) (string-concat acc (string-concat sep piece))))))
+
+(defn node-sexp [tree :document n :document] :string
+  (sexp-piece tree n ""))
+
+(defn cursor-new [id :i64] :document
+  (document-assoc (document-assoc (document {}) :id (box-i64 id)) :ok (box-i64 1)))
+
+(defn cursor-fail [c :document] :document
+  (document-assoc c :ok (box-i64 0)))
+
+(defn cursor-id [c :document] :i64
+  (doc-i64 (doc-get c :id)))
+
+(defn cursor-ok? [c :document] :bool
+  (= (doc-i64 (doc-get c :ok)) 1))
+
+(defn cursor-current-node [tree :document c :document] :document
+  (tree-node tree (cursor-id c)))
+
+(defn cursor-current-field-name [tree :document c :document] :string
+  (node-field-name (cursor-current-node tree c)))
+
+(defn cursor-goto-first-child [tree :document c :document] :document
+  (let [n (cursor-current-node tree c)
+        kids (node-children n)]
+    (if (= (document-count kids) 0)
+      (cursor-fail c)
+      (cursor-new (doc-i64 (option-or (document-vector-at kids 0) (document -1)))))))
+
+(defn cursor-goto-parent [tree :document c :document] :document
+  (let [n (cursor-current-node tree c)
+        p (doc-i64 (doc-get n :parent))]
+    (if (< p 0)
+      (cursor-fail c)
+      (cursor-new p))))
+
+(defn cursor-goto-next-sibling [tree :document c :document] :document
+  (let [n (cursor-current-node tree c)
+        p (node-parent tree n)]
+    (if (node-is-null? p)
+      (cursor-fail c)
+      (let [kids (node-children p)
+            idx (find-index kids (node-id n) 0)]
+        (if (or (< idx 0) (>= (+ idx 1) (document-count kids)))
+          (cursor-fail c)
+          (cursor-new (child-id-at p (+ idx 1))))))))
+
+(defn find-type [types :document name :string i :i64] :document
+  (if (>= i (document-count types))
+    (null-node)
+    (let [e (option-or (document-vector-at types i) (document {}))]
+      (if (string=? (doc-str (doc-get e :type)) name)
+        e
+        (find-type types name (+ i 1))))))
+
+(defn node-type-entry [types :document name :string] :document
+  (find-type types name 0))
+
+(defn node-type-named? [types :document name :string] :bool
+  (let [e (node-type-entry types name)]
+    (if (node-is-null? e)
+      false
+      (doc-true? (doc-get e :named)))))
+
+(defn scan-map-key [m :document name :string i :i64] :bool
+  (if (>= i (document-count m))
+    false
+    (let [e (option-or (document-map-entry-at m i) (document []))
+          k (option-or (document-vector-at e 0) (document nil))]
+      (if (string=? (doc-str k) name)
+        true
+        (scan-map-key m name (+ i 1))))))
+
+(defn node-type-has-field? [types :document name :string field :string] :bool
+  (let [e (node-type-entry types name)]
+    (if (node-is-null? e)
+      false
+      (let [fields (doc-get e :fields)]
+        (if (is-kind? fields "map")
+          (scan-map-key fields field 0)
+          false)))))

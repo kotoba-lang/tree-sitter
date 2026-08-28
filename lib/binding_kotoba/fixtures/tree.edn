@@ -1,0 +1,20 @@
+;; Vendored CST for source "x = 1". Not produced by libtree-sitter.
+;; Node ids are vector indices. parent -1 is the root.
+{:source "x = 1"
+ :root-id 0
+ :nodes
+ [{:id 0 :parent -1 :type "source_file" :named 1
+   :start-byte 0 :end-byte 5 :start-row 0 :start-column 0
+   :end-row 0 :end-column 5 :field "" :children [1]}
+  {:id 1 :parent 0 :type "assignment" :named 1
+   :start-byte 0 :end-byte 5 :start-row 0 :start-column 0
+   :end-row 0 :end-column 5 :field "" :children [2 3 4]}
+  {:id 2 :parent 1 :type "identifier" :named 1
+   :start-byte 0 :end-byte 1 :start-row 0 :start-column 0
+   :end-row 0 :end-column 1 :field "left" :children []}
+  {:id 3 :parent 1 :type "=" :named 0
+   :start-byte 2 :end-byte 3 :start-row 0 :start-column 2
+   :end-row 0 :end-column 3 :field "" :children []}
+  {:id 4 :parent 1 :type "number" :named 1
+   :start-byte 4 :end-byte 5 :start-row 0 :start-column 4
+   :end-row 0 :end-column 5 :field "right" :children []}]}
