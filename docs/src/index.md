@@ -26,6 +26,7 @@ There are bindings that allow Tree-sitter to be used from the following language
 - [JavaScript (Node.js)](https://github.com/tree-sitter/node-tree-sitter)
 - [JavaScript (Wasm)](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web)
 - [Kotlin](https://github.com/tree-sitter/kotlin-tree-sitter)
+- [Kotoba (Wasm fixture)](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_kotoba)
 - [Python](https://github.com/tree-sitter/py-tree-sitter)
 - [Rust](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_rust)
 - [Swift](https://github.com/tree-sitter/swift-tree-sitter)

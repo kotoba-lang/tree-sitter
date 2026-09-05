@@ -1,0 +1,23 @@
+;; Static node types for the vendored fixture grammar.
+;; Shape matches tree-sitter node-types.json (type, named, fields, children, types).
+;; This is a catalog, not a parser.
+[{:type "source_file"
+  :named true
+  :fields {}
+  :children {:multiple true
+             :required true
+             :types [{:type "assignment" :named true}]}}
+ {:type "assignment"
+  :named true
+  :fields {:left {:multiple false
+                  :required true
+                  :types [{:type "identifier" :named true}]}
+           :right {:multiple false
+                   :required true
+                   :types [{:type "number" :named true}]}}
+  :children {:multiple true
+             :required false
+             :types [{:type "=" :named false}]}}
+ {:type "identifier" :named true}
+ {:type "number" :named true}
+ {:type "=" :named false}]
